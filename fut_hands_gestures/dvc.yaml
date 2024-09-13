@@ -1,0 +1,18 @@
+# Creation Date: 2024-06-07
+# Authors Murilo Cruz Lopes, Ludwing Ferney Marenco Camacho
+# Developed by: Inatel Competence Center
+# Copyright 2024, INATEL.
+# All rights are reserved. Reproduction in whole or part is prohibited without the written consent of the copyright owner
+
+
+stages:
+    process_data:
+        cmd: 
+            python3 example.py --config=params.yaml
+        deps:
+            - dependency
+            - dependency
+        params:
+            - parameters from yaml file
+        outs:
+            - outputs

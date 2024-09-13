@@ -1,0 +1,1 @@
+python3 src/hand_detector/fut_models_main.py

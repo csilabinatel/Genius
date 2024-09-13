@@ -1,0 +1,10 @@
+Feature(SLI Hands Gesture): Add more commands gesture
+ 
+New gestures:
+ * Clicking gesture - left hand.
+ * see enviroment variable - right hand
+ * see graphs - right hand
+ * remove variable and graphs - Right hand
+ * dimmer control - right hand
+ 
+Associate #SLI-78

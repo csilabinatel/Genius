@@ -1,0 +1,44 @@
+// Creation Date: 2024-06-07
+// Authors Murilo Cruz Lopes, Ludwing Ferney Marenco Camacho
+// Developed by: Inatel Competence Center
+// Copyright 2024, INATEL.
+// All rights are reserved. Reproduction in whole or part is prohibited without the written consent of the copyright owner.
+
+pipeline {
+    agent {
+        label "pdia"
+    }
+
+    environment {
+        def branchName = "${env.BRANCH_NAME}"
+        def branchSuffix = "${branchName.contains("/") ? branchName.split("/")[1] : branchName}"
+        def imageName = "pdia_example:${branchSuffix}"
+        def containerTest = "pdia_example-container-jenkins"
+        HOME = "/home/ubuntu"
+        KUBECONFIG = "/home/ubuntu/.kube/config"
+        SCANNERHOME = tool "SonarQubeScanner"
+    }
+
+    stages {
+        stage("Code Quality Check via SonarQube") {
+            steps {
+                withSonarQubeEnv{
+                    sh "${SCANNERHOME}/bin/sonar-scanner"
+                }
+            }
+        }
+    }
+
+    post {
+        success {
+            office365ConnectorSend webhookUrl: "https://posinatel.webhook.office.com/webhookb2/90098294-0f9f-4607-a597-caa9a0f593f6@7e9e2c51-9fcf-4f2e-a79b-097e52a424cd/JenkinsCI/cb8a3d6e358a415c92a011703f377675/09b665d8-0916-417e-89c4-ef602ab40d51",
+                status: "Completed",
+                factDefinitions: [[name: "SUCCESS", template: "Build succeeded"]]
+        }
+        failure {
+            office365ConnectorSend webhookUrl: "https://posinatel.webhook.office.com/webhookb2/90098294-0f9f-4607-a597-caa9a0f593f6@7e9e2c51-9fcf-4f2e-a79b-097e52a424cd/JenkinsCI/cb8a3d6e358a415c92a011703f377675/09b665d8-0916-417e-89c4-ef602ab40d51",
+                status: "Failed",
+                factDefinitions: [[name: "FAILURE", template: "Build failed"]]
+        }
+    }
+}
