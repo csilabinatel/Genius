@@ -14,7 +14,7 @@ import cv2
 import sys
 
 # Topics and PlayerID
-playerID = "jogador1"
+playerID = "jogador2"
 topic_genius = "lamp_module/choice"
 topic_velha = f"JogoDaVelha/Session1/{playerID}/escolha"
 topic_dimmer = "rgb_module/dimmer/setLampState"
@@ -95,9 +95,9 @@ if __name__ == '__main__':
     print ("Connecting to the Server...")
     try:
         client.username_pw_set("csilab", "WhoAmI#2024")
-        client.connect("192.168.40.7", 1883, 60) #Mude o hostname para o IP do servidor
-    except:
-        print("Não foi possivel conectar ao MQTT...")
+        client.connect("192.168.66.11", 1883, 60) #Mude o hostname para o IP do servidor
+    except Exception as exception:
+        print("Não foi possivel conectar ao MQTT...", exception)
         print("Encerrando...")
 
     # Interface de escolha de Módulo

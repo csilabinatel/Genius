@@ -100,7 +100,7 @@ client.on_message = on_message
 		
 try:
     client.username_pw_set("csilab", "WhoAmI#2024")    
-    client.connect("192.168.40.7", 1883, 60) #Mude o hostname para o IP do servidor
+    client.connect("192.168.66.11", 1883, 60) #Mude o hostname para o IP do servidor
 except:
     print("Não foi possivel conectar ao MQTT...")
     print("Encerrando...")
