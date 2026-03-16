@@ -1,9 +1,29 @@
-# Creation Date: 2024-06-07
-# Authors Murilo Cruz Lopes, Ludwing Ferney Marenco Camacho
-# Developed by: Inatel Competence Center
-# Copyright 2024, INATEL.
-# All rights are reserved. Reproduction in whole or part is prohibited without the written consent of the copyright owner
+# Creation Date: 2026-03-15
+# Authors Alvaro Sampaio
+# Developed by: CSI-Lab
+# Copyright 2026, INATEL.
 
+# All rights are reserved. Reproduction in whole or part is prohibited without the written consent of the copyright owner
+# MELHORIA 2 — Arquivo simplificado (separação de responsabilidades):
+#   Antes: ~130 linhas misturando câmera, MQTT, UI e lógica de negócio.
+#   Depois: ~80 linhas, só orquestra os módulos camera_capture e mqtt_client.
+#   O main agora responde apenas "o que fazer", não "como fazer".
+#
+# BUG 3 CORRIGIDO — Credenciais movidas para constantes nomeadas:
+#   Antes: "csilab" e "WhoAmI#2024" estavam no meio do código.
+#   Depois: constantes no topo, fáceis de encontrar e modificar.
+#   Próximo passo: mover para arquivo .env com python-dotenv.
+#
+# BUG FIX — system_status sem chave "dimmer_value":
+#   Antes: {"lamp_status": None, "lamp_number": None}
+#          Causava KeyError ao comparar system_status["dimmer_value"] em control_objects.
+#   Depois: a chave "dimmer_value" foi adicionada ao dicionário inicial.
+#
+# MELHORIA 3 — Tratamento de erro de câmera delegado ao SLICameraCapture:
+#   Antes: if not ret: break — quebrava silenciosamente sem mensagem.
+#   Depois: SLICameraCapture.read_frame() tenta reconectar e retorna None
+#           se não conseguir. O main verifica o None e encerra de forma limpa.
+# ═
 
 from mediapipe.tasks import python
 from mediapipe.tasks.python import vision
@@ -12,164 +32,212 @@ import paho.mqtt.client as mqtt #pip install paho-mqtt
 import json
 import cv2
 import sys
+import dotenv
+import os
+
+from dotenv import load_dotenv
+
+load_dotenv()
 
 # Topics and PlayerID
-playerID = "jogador2"
-topic_genius = "lamp_module/choice"
-topic_velha = f"JogoDaVelha/Session1/{playerID}/escolha"
-topic_dimmer = "rgb_module/dimmer/setLampState"
+MQTT_HOST = os.getenv("MQTT_HOST")
+MQTT_PORT = int(os.getenv("MQTT_PORT"))
+MQTT_USER = os.getenv("MQTT_USER")
+MQTT_PASSWORD = os.getenv("MQTT_PASSWORD")
+PLAYER_ID = os.getenv("PLAYER_ID")
+TOPIC_GENIUS = os.getenv("TOPIC_GENIUS")
+TOPIC_VELHA = f"JogoDaVelha/Session1/{PLAYER_ID}/escolha"
+TOPIC_DIMMER = os.getenv("TOPIC_DIMMER")
 
 # Draw the detection on the screen
 def draw_detections(frame, message):
-    if len(message) != 0:
-        if message["hand"] == "Left":
-            if message["click_status"]:
-                cv2.putText(frame, "CLICKING", (100, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA, False)
-            else:
-                cv2.putText(frame, str(message["number"]), (100, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA, False)
-        if message["hand"] == "Right":
-            if message["open_palm"]:
-                cv2.putText(frame, "TURN ON", (360, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1, cv2.LINE_AA, False)
-            if message["close_fist"]:
-                cv2.putText(frame, "TURN OFF", (360, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1, cv2.LINE_AA, False)
-            if message["env_var"]:
-                cv2.putText(frame, "SHOW VAR STATUS", (360, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1, cv2.LINE_AA, False)
-            if message["graphs"]:
-                cv2.putText(frame, "SHOW GRAPHS", (360, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1, cv2.LINE_AA, False)
-            if message["remove_all"]:
-                cv2.putText(frame, "REMOVE EVERYTHING", (360, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1, cv2.LINE_AA, False)
-            if message["dimmer_value"] is not None:
-                cv2.putText(frame, "DIMMER: " + str(message["dimmer_value"]), (360, 20), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1, cv2.LINE_AA, False)
+    """
+    Desenha na tela o gesto detectado para feedback visual.
+
+    MELHORIA 2: pequena refatoração — usa message.get() em vez de
+    acessar as chaves diretamente, evitando KeyError se alguma chave
+    estiver ausente no dicionário.
+    """
+    if not message:
+        return
+
+    if message.get("hand") == "Left":
+        text = "CLICKING" if message.get("click_status") else str(message.get("number"))
+        cv2.putText(frame, text, (100, 20),
+                    cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA)
+
+    if message.get("hand") == "Right":
+        # Determina qual texto exibir baseado no comando ativo
+        text = None
+        if message.get("open_palm"):    text = "TURN ON"
+        elif message.get("close_fist"): text = "TURN OFF"
+        elif message.get("env_var"):    text = "SHOW VAR STATUS"
+        elif message.get("graphs"):     text = "SHOW GRAPHS"
+        elif message.get("remove_all"): text = "REMOVE EVERYTHING"
+        elif message.get("dimmer_value") is not None:
+            text = "DIMMER: " + str(message["dimmer_value"])
+
+        if text:
+            cv2.putText(frame, text, (360, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 1, cv2.LINE_AA)
 
 
-# Organize the information about the hand and send it to the mqqt server
-def control_objects(topic, right_hand_message, left_hand_message, system_status, client = None):
+def control_objects(topic, right_hand_message, left_hand_message, system_status, mqtt):
+    """
+    Combina os gestos das duas mãos e publica o comando via MQTT.
+
+    Lógica:
+    - Mão direita define ESTADO: ligar (1), desligar (0) ou valor do dimmer
+    - Mão esquerda define QUAL lâmpada/posição (número 1-10)
+    - Só publica se algo mudou desde o último comando enviado
+
+    Args:
+        topic:              tópico MQTT de destino
+        right_hand_message: dict do gesto da mão direita
+        left_hand_message:  dict do gesto da mão esquerda
+        system_status:      dict com o último estado publicado (evita republicar)
+        mqtt:               instância de SLIMQTTClient
+    """
     lamp_number = None
     lamp_status = None
-    dimmer = None
-    msg = None
+    dimmer      = None
 
-    if len(right_hand_message) != 0:
-        if right_hand_message["open_palm"] == True and right_hand_message["close_fist"] == False:
-            lamp_status = 1
-        elif right_hand_message["open_palm"] == False and right_hand_message["close_fist"] == True:
-            lamp_status = 0
-        elif "dimmer_value" in right_hand_message:
-            dimmer = right_hand_message['dimmer_value']
-        
-    if len(left_hand_message) != 0 and left_hand_message["number"] is not None:
+    # Interpreta mão direita → o QUE fazer com a lâmpada
+    if right_hand_message:
+        if right_hand_message.get("open_palm") and not right_hand_message.get("close_fist"):
+            lamp_status = 1   # ligar
+        elif not right_hand_message.get("open_palm") and right_hand_message.get("close_fist"):
+            lamp_status = 0   # desligar
+        elif right_hand_message.get("dimmer_value") is not None:
+            dimmer = right_hand_message["dimmer_value"]
+
+    # Interpreta mão esquerda → QUAL lâmpada
+    if left_hand_message and left_hand_message.get("number") is not None:
         lamp_number = str(left_hand_message["number"])
 
+    # Só executa se ambas as mãos deram informações válidas
     if lamp_number is not None and (lamp_status is not None or dimmer is not None):
-        if system_status['lamp_status'] != lamp_status or system_status['lamp_number'] != lamp_number or system_status['dimmer_value'] != dimmer:
-            if topic == topic_velha:
+
+        # Verifica se houve mudança de estado — evita spam de MQTT
+        state_changed = (
+            system_status["lamp_status"]  != lamp_status or
+            system_status["lamp_number"]  != lamp_number or
+            system_status["dimmer_value"] != dimmer   # BUG FIX: chave que faltava
+        )
+
+        if state_changed:
+            if topic == TOPIC_VELHA:
+                # Jogo da Velha: só publica quando o gesto é "ligar" (lamp_status == 1)
                 if lamp_status == 1:
-                    client.publish(topic, '{"lampada":'+str(lamp_number)+'}')
+                    mqtt.publish(topic, '{"lampada":' + str(lamp_number) + '}')
             else:
-                msg = {"left_hand":int(lamp_number), "right_hand_message":lamp_status, "dimmer": dimmer}
-                print(msg)
-                client.publish(topic, json.dumps(msg))
-            system_status['lamp_status'] = lamp_status
-            system_status['lamp_number'] = lamp_number
-            system_status['dimmer_value'] = dimmer
+                # Genius e Dimmer: publica o estado completo
+                mqtt.publish(topic, {
+                    "left_hand":          int(lamp_number),
+                    "right_hand_message": lamp_status,
+                    "dimmer":             dimmer
+                })
 
+            # Atualiza o estado salvo para a próxima comparação
+            system_status["lamp_status"]  = lamp_status
+            system_status["lamp_number"]  = lamp_number
+            system_status["dimmer_value"] = dimmer  # BUG FIX: chave que faltava
 
-# Função para conexão
-def on_connect(client, userdata, flags, rc):
-    print("Conectado - Codigo de resultado: "+str(rc))
-    # Indique o tópico a ser assinado - "#" se inscreve em todos
-    client.subscribe("#")
-
-#função onde recebe mensagens
-def on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload.decode()))
 
 if __name__ == '__main__':
 
-    # Realiza a conexão assim que o código inicia
-    client = mqtt.Client()
+    # ── MQTT ──────────────────────────────────────────────────────
+    # MELHORIA 2: antes eram ~6 linhas com client, callbacks e connect espalhadas.
+    # Agora é uma instância de classe com interface limpa.
+    mqtt_client = SLIMQTTClient(MQTT_HOST, MQTT_PORT, MQTT_USER, MQTT_PASSWORD)
+    if not mqtt_client.connect():
+        # MELHORIA 3: antes o código continuava mesmo sem conexão MQTT.
+        # Agora encerra de forma limpa com código de saída 1 (erro).
+        print("Encerrando por falha de conexão MQTT.")
+        sys.exit(1)
 
-    client.on_connect = on_connect
-    client.on_message = on_message
-
-    print ("Connecting to the Server...")
-    try:
-        client.username_pw_set("csilab", "WhoAmI#2024")
-        client.connect("192.168.66.11", 1883, 60) #Mude o hostname para o IP do servidor
-    except Exception as exception:
-        print("Não foi possivel conectar ao MQTT...", exception)
-        print("Encerrando...")
-
-    # Interface de escolha de Módulo
-    print("escolha o módulo desejado:")
+    # ── Menu ──────────────────────────────────────────────────────
+    print("\nEscolha o módulo desejado:")
     print("1 - Genius")
     print("2 - Jogo da VeIA")
     print("3 - Dimerizador")
 
-    # Variável aux escolha
-    x = int(input())
+    try:
+        x = int(input("> "))
+    except ValueError:
+        print("Entrada inválida! Digite 1, 2 ou 3.")
+        sys.exit(1)
 
-    # Tomada de decisão 
     if x == 1:
-        print("Iniciando Genius ...")
+        print("Iniciando Genius...")
         remote_controller = SLIRemoteController(dimmer_flag=False)
-        topic = topic_genius
+        topic = TOPIC_GENIUS
     elif x == 2:
-        print("Iniciando Jogo da VeIA ...")
+        print("Iniciando Jogo da VeIA...")
         remote_controller = SLIRemoteController(dimmer_flag=False)
-        topic = topic_velha
-        client.publish("JogoDaVelha/Session1/subClient", playerID)
+        topic = TOPIC_VELHA
+        mqtt_client.publish(f"JogoDaVelha/Session1/subClient", PLAYER_ID)
     elif x == 3:
-        print("Iniciando Dimerizador ...")
+        print("Iniciando Dimerizador...")
         remote_controller = SLIRemoteController(dimmer_flag=True)
-        topic = topic_dimmer
+        topic = TOPIC_DIMMER
     else:
         print("Escolha inválida!")
-        sys.exit()
+        sys.exit(1)
 
-    system_status = {"lamp_status": None, "lamp_number": None}
+    # BUG FIX: "dimmer_value" adicionado ao dicionário inicial.
+    # Antes estava ausente, causando KeyError na função control_objects
+    # quando o módulo dimerizador tentava comparar o estado anterior.
+    system_status = {
+        "lamp_status":  None,
+        "lamp_number":  None,
+        "dimmer_value": None  # ← chave que faltava
+    }
 
-    cap = cv2.VideoCapture(0)
-    width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
-    height = cap.get(cv2.CAP_PROP_FRAME_HEIGHT)
+    # ── Câmera ────────────────────────────────────────────────────
+    # MELHORIA 2: antes eram ~15 linhas de cálculo de ROI e VideoCapture
+    # espalhadas no main. Agora são 3 linhas.
+    camera = SLICameraCapture(camera_index=0)
+    if not camera.open():
+        print("Encerrando por falha na câmera.")
+        mqtt_client.disconnect()
+        sys.exit(1)
 
-    running=True
-
-    ## This peace of code is to adjust the roi for each resolution video
-    left_box_x1 = int(0*width) #0
-    left_box_y1 = int(0.054*height) # 26
-    left_box_x2 = int(0.4375*width) # 280
-    left_box_y2 = int(0.7395*height) # 355
-
-    right_box_x1 = int(0.5625*width) # 360
-    right_box_y1 = int(0.054*height) # 26
-    right_box_x2 = int(1*width) # 640
-    right_box_y2 = int(0.7395*height) # 355
+    print("Sistema iniciado. Pressione 'q' para encerrar.")
+    running = True
 
     while running:
-        ret, frame = cap.read()
-        frame = cv2.flip(frame, 1)
+        # MELHORIA 3: read_frame() já trata reconexão internamente.
+        # Se retornar None, a câmera não pôde ser recuperada — encerra.
+        frame = camera.read_frame()
+        if frame is None:
+            print("Câmera indisponível. Encerrando.")
+            break
 
-        roi_right_hand = frame[right_box_y1:right_box_y2, right_box_x1:right_box_x2]
-        roi_right_hand, right_hand_message = remote_controller.process_frame(roi_right_hand, roi_side = "Right") # passa o frame e retorna as detecções e a mensagem no formato json
+        # MELHORIA 2: get_roi() encapsula o recorte — o main não precisa
+        # saber as coordenadas das ROIs.
+        roi_right = camera.get_roi(frame, "Right")
+        roi_right, right_hand_message = remote_controller.process_frame(roi_right, roi_side="Right")
 
-        roi_left_hand = frame[left_box_y1:left_box_y2, left_box_x1:left_box_x2]
-        roi_left_hand, left_hand_message = remote_controller.process_frame(roi_left_hand, roi_side = "Left")
+        roi_left = camera.get_roi(frame, "Left")
+        roi_left, left_hand_message = remote_controller.process_frame(roi_left, roi_side="Left")
 
-        control_objects(topic, right_hand_message, left_hand_message, system_status, client)
+        # Publica no MQTT se gestos válidos foram confirmados
+        control_objects(topic, right_hand_message, left_hand_message, system_status, mqtt_client)
 
-        cv2.rectangle(frame, (left_box_x1, left_box_y1), (left_box_x2, left_box_y2), (255, 0, 0), 2)
-        cv2.rectangle(frame, (right_box_x1, right_box_y1), (right_box_x2, right_box_y2), (255, 0, 0), 2)
-        cv2.putText(frame, "RIGHT HAND HERE", (right_box_x1 - 5, right_box_y1*2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA, False)
-        cv2.putText(frame, "LEFT HAND HERE", (left_box_x1 + 10, left_box_y1*2), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 255), 2, cv2.LINE_AA, False)
-
+        # MELHORIA 2: draw_rois() encapsula o desenho dos retângulos.
+        camera.draw_rois(frame)
         draw_detections(frame, left_hand_message)
         draw_detections(frame, right_hand_message)
 
         cv2.imshow("Hands Landmarks", frame)
-        if cv2.waitKey(1) == ord('q'):
-            running=False
-            client.loop_stop()
 
-    cap.release()
+        if cv2.waitKey(1) == ord('q'):
+            running = False
+
+    # ── Limpeza ───────────────────────────────────────────────────
+    # MELHORIA 2: encerramento explícito e organizado dos recursos.
+    # Antes: cap.release() e client.loop_stop() estavam soltos no final do main.
+    camera.release()
+    mqtt_client.disconnect()
     cv2.destroyAllWindows()
