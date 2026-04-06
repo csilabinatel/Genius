@@ -12,12 +12,66 @@ import paho.mqtt.client as mqtt #pip install paho-mqtt
 import json
 import cv2
 import sys
+import time
 
 # Topics and PlayerID
 playerID = "jogador2"
 topic_genius = "lamp_module/choice"
 topic_velha = f"JogoDaVelha/Session1/{playerID}/escolha"
 topic_dimmer = "rgb_module/dimmer/setLampState"
+
+GENIUS_CONFIRM_HOLD_S = 1.0  # era 1.5s; diminua/aumente aqui
+GENIUS_CONFIRMED_TOAST_S = 0.7
+
+
+def draw_genius_confirm_ui(frame, system_status):
+    now = time.monotonic()
+
+    target = system_status.get("genius_target_number")
+    progress = float(system_status.get("genius_progress", 0.0) or 0.0)
+    latched = bool(system_status.get("genius_latched", False))
+    last_ok = system_status.get("genius_last_confirmed_at")
+
+    # Toast rápido após confirmar
+    if latched and last_ok is not None and (now - float(last_ok)) <= GENIUS_CONFIRMED_TOAST_S:
+        text = f"CONFIRMADO: {target}" if target is not None else "CONFIRMADO"
+        cv2.putText(frame, text, (20, 55), cv2.FONT_HERSHEY_SIMPLEX, 1, (0, 255, 0), 2, cv2.LINE_AA, False)
+        return
+
+    if target is None:
+        cv2.putText(
+            frame,
+            "GENIUS: faça o mesmo numero nas 2 maos",
+            (20, 55),
+            cv2.FONT_HERSHEY_SIMPLEX,
+            0.8,
+            (0, 255, 255),
+            2,
+            cv2.LINE_AA,
+            False,
+        )
+        return
+
+    # Barra de progresso (carregamento)
+    progress = max(0.0, min(1.0, progress))
+    x1, y1 = 20, 70
+    x2, y2 = 320, 95
+    cv2.rectangle(frame, (x1, y1), (x2, y2), (255, 255, 255), 2)
+    fill_x2 = int(x1 + (x2 - x1) * progress)
+    cv2.rectangle(frame, (x1 + 2, y1 + 2), (max(x1 + 2, fill_x2 - 2), y2 - 2), (0, 255, 0), -1)
+
+    remaining = max(0.0, GENIUS_CONFIRM_HOLD_S * (1.0 - progress))
+    cv2.putText(
+        frame,
+        f"CONFIRMANDO {target}... {remaining:.1f}s",
+        (20, 50),
+        cv2.FONT_HERSHEY_SIMPLEX,
+        0.9,
+        (0, 255, 0),
+        2,
+        cv2.LINE_AA,
+        False,
+    )
 
 # Draw the detection on the screen
 def draw_detections(frame, message):
@@ -44,6 +98,69 @@ def draw_detections(frame, message):
 
 # Organize the information about the hand and send it to the mqqt server
 def control_objects(topic, right_hand_message, left_hand_message, system_status, client = None):
+    # Genius: confirmação por tempo usando o mesmo número nas duas mãos.
+    # Confirma quando (left_number == right_number) em [1..6] por GENIUS_CONFIRM_HOLD_S.
+    if topic == topic_genius:
+        now = time.monotonic()
+
+        left_number = None
+        if len(left_hand_message) != 0:
+            left_number = left_hand_message.get("number", None)
+
+        right_number = None
+        if len(right_hand_message) != 0:
+            right_number = right_hand_message.get("number", None)
+
+        system_status.setdefault("genius_last_number", None)
+        system_status.setdefault("genius_hold_started_at", None)
+        system_status.setdefault("genius_latched", False)
+        system_status.setdefault("genius_progress", 0.0)
+        system_status.setdefault("genius_target_number", None)
+        system_status.setdefault("genius_last_confirmed_at", None)
+
+        valid_choice = (left_number is not None) and (right_number is not None)
+        if valid_choice:
+            try:
+                left_number_int = int(left_number)
+                right_number_int = int(right_number)
+            except Exception:
+                valid_choice = False
+            else:
+                valid_choice = (
+                    1 <= left_number_int <= 6
+                    and 1 <= right_number_int <= 6
+                    and left_number_int == right_number_int
+                )
+
+        if valid_choice:
+            if system_status["genius_last_number"] != left_number_int:
+                system_status["genius_last_number"] = left_number_int
+                system_status["genius_hold_started_at"] = now
+                system_status["genius_latched"] = False
+
+            system_status["genius_target_number"] = left_number_int
+
+            if system_status["genius_hold_started_at"] is None:
+                system_status["genius_hold_started_at"] = now
+
+            elapsed = now - system_status["genius_hold_started_at"]
+            system_status["genius_progress"] = min(1.0, max(0.0, elapsed / GENIUS_CONFIRM_HOLD_S))
+            if elapsed >= GENIUS_CONFIRM_HOLD_S and not system_status["genius_latched"]:
+                msg = {"left_hand": left_number_int, "right_hand_message": 1, "dimmer": None}
+                print(msg)
+                client.publish(topic, json.dumps(msg))
+                system_status["genius_latched"] = True
+                system_status["genius_last_confirmed_at"] = now
+        else:
+            # Soltou / mudou número → libera para confirmar de novo
+            system_status["genius_last_number"] = None
+            system_status["genius_hold_started_at"] = None
+            system_status["genius_latched"] = False
+            system_status["genius_progress"] = 0.0
+            system_status["genius_target_number"] = None
+
+        return
+
     lamp_number = None
     lamp_status = None
     dimmer = None
@@ -127,7 +244,7 @@ if __name__ == '__main__':
         print("Escolha inválida!")
         sys.exit()
 
-    system_status = {"lamp_status": None, "lamp_number": None}
+    system_status = {"lamp_status": None, "lamp_number": None, "dimmer_value": None}
 
     cap = cv2.VideoCapture(0)
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -165,6 +282,8 @@ if __name__ == '__main__':
 
         draw_detections(frame, left_hand_message)
         draw_detections(frame, right_hand_message)
+        if topic == topic_genius:
+            draw_genius_confirm_ui(frame, system_status)
 
         cv2.imshow("Hands Landmarks", frame)
         if cv2.waitKey(1) == ord('q'):

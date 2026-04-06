@@ -19,6 +19,7 @@ class SLIRemoteController():
     def __get_command_gesture(self, land_marks, hand_pos):
         command_dic = {}
         command_dic["hand"] = "Right"
+        command_dic["number"] = None
         command_dic["open_palm"] = False
         command_dic["close_fist"] = False
         command_dic["env_var"] = False
@@ -27,6 +28,8 @@ class SLIRemoteController():
         command_dic["dimmer_value"]= None
 
         number = self.__get_gesture_number(land_marks, hand_pos)
+        if isinstance(number, int):
+            command_dic["number"] = number
 
         if number == 1:
             command_dic["env_var"] = True
@@ -81,11 +84,20 @@ class SLIRemoteController():
         if gd.is_number_four(hand_landmark) and hand_position == "Left":
             return {"hand": "Left", "number": 4}
 
+        if gd.is_number_four(hand_landmark) and hand_position == "Right":
+            return 4
+
         if gd.is_palm_open(hand_landmark) and hand_position == "Left":
             return {"hand": "Left", "number": 5}
 
+        if gd.is_palm_open(hand_landmark) and hand_position == "Right":
+            return 5
+
         if gd.is_number_six(hand_landmark) and hand_position == "Left":
             return {"hand": "Left", "number": 6}
+
+        if gd.is_number_six(hand_landmark) and hand_position == "Right":
+            return 6
 
         if gd.is_number_seven(hand_landmark) and hand_position == "Left":
             return {"hand": "Left", "number": 7}
