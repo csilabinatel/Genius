@@ -125,6 +125,12 @@ GENIUS_CONFIRMED_TOAST_S = 0.7
 def draw_genius_confirm_ui(frame, system_status):
     now = time.monotonic()
 
+    score = system_status.get("genius_score")
+    best = system_status.get("genius_best")
+    # Fonte preferencial: genius.py publica score (acertos) em lamp_module/score.
+    # A fase exibida é o próprio score (começa em 0 e incrementa a cada acerto).
+    phase = system_status.get("genius_phase")
+
     target = system_status.get("genius_target_number")
     progress = float(system_status.get("genius_progress", 0.0) or 0.0)
     latched = bool(system_status.get("genius_latched", False))
@@ -136,17 +142,32 @@ def draw_genius_confirm_ui(frame, system_status):
     _alpha_rect(frame, 0, 0, w, panel_h, UI_THEME["bg"], alpha=0.25)
     _rounded_panel(frame, 12, 10, w - 12, panel_h - 10, UI_THEME["panel"], alpha=0.65, radius=18, border_color=UI_THEME["yellow"], border_thickness=2)
 
+    def _draw_score_chips(frame, w, h, score, best, phase):
+        phase_int = int(phase) if phase is not None else 0
+        phase_text = f"Numeros corretos {max(0, phase_int)}"
+        tw, _, _ = _text_size(phase_text, scale=1.1, thickness=3)
+        bx = w // 2 - tw // 2 - 14
+        by = h - 70
+        _label_chip(frame, phase_text, bx, by, UI_THEME["green"], text_color=(20, 20, 20), scale=1.1)
+        if score is not None:
+            sx = max(24, w - 320)
+            _label_chip(frame, f"PONTOS {int(score)}", sx, 18, UI_THEME["yellow"], text_color=(20, 20, 20), scale=0.68)
+            if best is not None:
+                _label_chip(frame, f"REC {int(best)}", sx, 54, UI_THEME["blue"], scale=0.62)
+
     # Toast rápido após confirmar
     if latched and last_ok is not None and (now - float(last_ok)) <= GENIUS_CONFIRMED_TOAST_S:
         chip_x = 24
         chip_x = _label_chip(frame, "GENIUS", chip_x, 20, UI_THEME["purple"], scale=0.75)
         _label_chip(frame, f"MUITO BEM! {target}", chip_x + 10, 20, UI_THEME["green"], scale=0.75)
+        _draw_score_chips(frame, w, h, score, best, phase)
         return
 
     if target is None:
         chip_x = 24
         chip_x = _label_chip(frame, "GENIUS", chip_x, 20, UI_THEME["purple"], scale=0.75)
         _label_chip(frame, "Faca o MESMO numero nas 2 maos", chip_x + 10, 20, UI_THEME["blue"], scale=0.75)
+        _draw_score_chips(frame, w, h, score, best, phase)
         return
 
     # Indicador com anel de progresso (mais divertido que barra)
@@ -159,6 +180,7 @@ def draw_genius_confirm_ui(frame, system_status):
     chip_x = 24
     chip_x = _label_chip(frame, "GENIUS", chip_x, 20, UI_THEME["purple"], scale=0.75)
     _label_chip(frame, f"Segure o {target}  ({remaining:.1f}s)", chip_x + 10, 20, UI_THEME["green"], scale=0.75)
+    _draw_score_chips(frame, w, h, score, best, phase)
 
 # Draw the detection on the screen
 def draw_detections(frame, message):
@@ -223,6 +245,10 @@ def control_objects(topic, right_hand_message, left_hand_message, system_status,
     if topic == topic_genius:
         now = time.monotonic()
 
+        # Contador local de fase (fallback) caso o genius.py não publique lamp_module/score.
+        system_status.setdefault("genius_phase", 0)
+        system_status["_genius_last_choice_at"] = system_status.get("_genius_last_choice_at")
+
         left_number = None
         if len(left_hand_message) != 0:
             left_number = left_hand_message.get("number", None)
@@ -237,6 +263,7 @@ def control_objects(topic, right_hand_message, left_hand_message, system_status,
         system_status.setdefault("genius_progress", 0.0)
         system_status.setdefault("genius_target_number", None)
         system_status.setdefault("genius_last_confirmed_at", None)
+        system_status.setdefault("genius_round", 0)
 
         valid_choice = (left_number is not None) and (right_number is not None)
         if valid_choice:
@@ -269,6 +296,12 @@ def control_objects(topic, right_hand_message, left_hand_message, system_status,
                 msg = {"left_hand": left_number_int, "right_hand_message": 1, "dimmer": None}
                 print(msg)
                 client.publish(topic, json.dumps(msg))
+                system_status["_genius_last_choice_at"] = now
+
+                # Fallback: assume acerto até o jogo sinalizar erro.
+                # (Se o player errar, o padrão do errou() reseta a fase em on_message.)
+                system_status["genius_phase"] = int(system_status.get("genius_phase", 0)) + 1
+
                 system_status["genius_latched"] = True
                 system_status["genius_last_confirmed_at"] = now
         else:
@@ -319,7 +352,60 @@ def on_connect(client, userdata, flags, rc):
 
 #função onde recebe mensagens
 def on_message(client, userdata, msg):
-    print(msg.topic+" "+str(msg.payload.decode()))
+    payload = msg.payload.decode()
+    print(msg.topic+" "+str(payload))
+
+    if userdata is None:
+        return
+
+    # ------------------------------
+    # Fallback de fase via setState
+    # ------------------------------
+    # Se detectar padrão de ERRO (todas as 6 lâmpadas ligam), reseta fase para 0.
+    if msg.topic == "lamp_module/setState":
+        try:
+            data = json.loads(payload)
+            lamp = int(data.get("lampada", 0))
+            state = int(data.get("estado", -1))
+            now = time.monotonic()
+
+            # Inicialização
+            userdata.setdefault("genius_phase", 0)
+            userdata.setdefault("_genius_err_on", set())
+            userdata.setdefault("_genius_err_on_ts", None)
+            userdata.setdefault("_genius_err_recent", False)
+            # Não contamos fase por "início de sequência" aqui porque o usuário quer
+            # incrementar a cada acerto de botão.
+
+            # Detecta ERRO: 6 lâmpadas ON dentro de uma janela curta.
+            if state == 1 and 1 <= lamp <= 6:
+                if userdata["_genius_err_on_ts"] is None or (now - float(userdata["_genius_err_on_ts"])) > 0.9:
+                    userdata["_genius_err_on_ts"] = now
+                    userdata["_genius_err_on"] = set()
+                userdata["_genius_err_on"].add(lamp)
+                if len(userdata["_genius_err_on"]) >= 6:
+                    userdata["genius_phase"] = 0
+                    userdata["genius_score"] = 0
+                    userdata["_genius_err_recent"] = True
+                    userdata["_genius_err_on"] = set()
+
+        except Exception:
+            pass
+
+    # Atualiza fase e placar via MQTT do genius.py (quando disponível).
+    if msg.topic == "lamp_module/score":
+        try:
+            data = json.loads(payload)
+        except Exception:
+            return
+        try:
+            if "score" in data:
+                userdata["genius_score"] = int(data["score"])
+                userdata["genius_phase"] = int(data["score"])
+            if "best" in data:
+                userdata["genius_best"] = int(data["best"])
+        except Exception:
+            return
 
 if __name__ == '__main__':
 
@@ -336,6 +422,10 @@ if __name__ == '__main__':
     except Exception as exception:
         print("Não foi possivel conectar ao MQTT...", exception)
         print("Encerrando...")
+        sys.exit(1)
+
+    # Necessário para receber mensagens (ex.: lamp_module/score)
+    client.loop_start()
 
     # Interface de escolha de Módulo
     print("escolha o módulo desejado:")
@@ -365,6 +455,7 @@ if __name__ == '__main__':
         sys.exit()
 
     system_status = {"lamp_status": None, "lamp_number": None, "dimmer_value": None}
+    client.user_data_set(system_status)
 
     cap = cv2.VideoCapture(0)
     width = cap.get(cv2.CAP_PROP_FRAME_WIDTH)
@@ -415,6 +506,11 @@ if __name__ == '__main__':
         if cv2.waitKey(1) == ord('q'):
             running=False
             client.loop_stop()
+
+    try:
+        client.disconnect()
+    except Exception:
+        pass
 
     cap.release()
     cv2.destroyAllWindows()

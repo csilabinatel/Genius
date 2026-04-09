@@ -5,8 +5,15 @@ import json
 
 rodada = 0
 cont = 0
+pontos = 0
+recorde = 0
 seq = list()
 seq.append(random.randint(1, 6))
+
+
+def publicar_pontuacao():
+    payload = {"score": int(pontos), "best": int(recorde), "round": int(rodada)}
+    client.publish("lamp_module/score", json.dumps(payload))
 
 def errou():
     for x in range(2):
@@ -54,8 +61,12 @@ def mostrar_seq(rodada):
 
 
 def verifica(lamp):
-    global rodada,cont,seq
+    global rodada,cont,seq,pontos,recorde
     if seq[cont] == lamp:
+        # Cada acerto de botão conta 1 ponto.
+        pontos += 1
+        recorde = max(recorde, pontos)
+        publicar_pontuacao()
         if cont == rodada:
             rodada += 1
             cont = 0
@@ -66,8 +77,11 @@ def verifica(lamp):
         client.publish("lamp_module/setState",'{"lampada": '+ str( lamp ) +',"estado": 0}')
     else:
         errou()
+        recorde = max(recorde, pontos)
         rodada = 0
         cont = 0
+        pontos = 0
+        publicar_pontuacao()
         seq.clear()
         seq.append(random.randint(1, 6))
         mostrar_seq(rodada)
@@ -77,10 +91,11 @@ def on_connect(client, userdata, flags, rc):
 
     # Indique o tópico a ser assinado - "#" se inscreve em todos
     client.subscribe("lamp_module/#")
+    publicar_pontuacao()
     mostrar_seq(rodada)
 
 #função onde recebe mensagens 
-def on_message(client, msg):
+def on_message(client, userdata, msg):
     print(msg.topic+" "+str(msg.payload.decode()))
     lista = msg.topic.split("/")
 
