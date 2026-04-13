@@ -75,6 +75,7 @@ def verifica(lamp):
         else:
             cont += 1   
         client.publish("lamp_module/setState",'{"lampada": '+ str( lamp ) +',"estado": 0}')
+        
     else:
         errou()
         recorde = max(recorde, pontos)
