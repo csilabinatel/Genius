@@ -11,7 +11,7 @@ const char* ssid = "CSI-Lab";
 const char* password =  "In@teLCS&I"; 
 
 //informações do broker MQTT
-const char* mqttServer = "192.168.40.7";   
+const char* mqttServer = "192.168.66.11";
 const char* mqttUser = "csilab";            
 const char* mqttPassword = "WhoAmI#2024";  
 const int mqttPort = 1883;              
