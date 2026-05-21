@@ -11,7 +11,7 @@ const char* ssid = "CSI-Lab";
 const char* password =  "In@teLCS&I"; 
 
 //informações do broker MQTT
-const char* mqttServer = "192.168.66.11";
+const char* mqttServer = "192.168.66.11";   
 const char* mqttUser = "csilab";            
 const char* mqttPassword = "WhoAmI#2024";  
 const int mqttPort = 1883;              
@@ -28,28 +28,8 @@ const char *ID = "Futurecom_01";
 WiFiClient espClient;
 PubSubClient client(espClient);
 
-//FUNCAO DE RECEBIMENTO E PROCESSAMENTO DE MENSAGENS VINDAS DO BROKER
-void callback(char* topic, byte* payload, unsigned int length){
-  String topico = topic;
 
-  if (topico == "lamp_module/setState"){
-    const char* msg = (char*)payload; // Define o tamanho do buffer necessário para armazenar o JSON
-    StaticJsonDocument<200> doc; // Deserializa a string JSON para o objeto doc
-    DeserializationError error = deserializeJson(doc, msg); // Verifica se houve erro na deserialização
-    if (error) {
-      Serial.print(F("Falha na deserialização: "));
-      Serial.println(error.f_str());
-      return;
-    }
-    
-    int lamp = doc["lampada"];
-    int estado = doc["estado"];
-    Serial.println(String(lamp)+" - "+String(estado));
-    lampada(lamp,estado);
-  }
-  
-}
-
+//função lampada 
 void lampada (int lamp, int estado){
 
   if(estado == 1)
@@ -82,6 +62,30 @@ void lampada (int lamp, int estado){
   }
 
 }
+
+//FUNCAO DE RECEBIMENTO E PROCESSAMENTO DE MENSAGENS VINDAS DO BROKER
+void callback(char* topic, byte* payload, unsigned int length){
+  String topico = topic;
+
+  if (topico == "lamp_module/setState"){
+    const char* msg = (char*)payload; // Define o tamanho do buffer necessário para armazenar o JSON
+    StaticJsonDocument<200> doc; // Deserializa a string JSON para o objeto doc
+    DeserializationError error = deserializeJson(doc, msg); // Verifica se houve erro na deserialização
+    if (error) {
+      Serial.print(F("Falha na deserialização: "));
+      Serial.println(error.f_str());
+      return;
+    }
+    
+    int lamp = doc["lampada"];
+    int estado = doc["estado"];
+    Serial.println(String(lamp)+" - "+String(estado));
+    lampada(lamp,estado);
+  }
+  
+}
+
+
   
 void connect () //FUNCAO DE RECONEXAO COM O BROKER
 {
