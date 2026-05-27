@@ -33,6 +33,8 @@ CORES = {
     "apagado": {"r": 0, "g": 0, "b": 0},
 }
 
+SEQUENCIA_CARACOL = [1, 2, 3, 6, 9, 8, 7, 4, 5]
+
 
 def indice_para_matriz(indice):
     if 1 <= indice <= 9:
@@ -109,6 +111,14 @@ def apagar_tabuleiro():
         publicar_lampada(lampada, CORES["apagado"])
 
 
+def apagar_tabuleiro_seguro(repeticoes=4, pausa_lampada=0.05, pausa_ciclo=0.15):
+    for _ in range(repeticoes):
+        for lampada in range(1, 10):
+            publicar_lampada(lampada, CORES["apagado"])
+            time.sleep(pausa_lampada)
+        time.sleep(pausa_ciclo)
+
+
 def redesenhar_tabuleiro():
     for lampada in range(1, 10):
         valor = obter_valor(lampada)
@@ -152,6 +162,15 @@ def obter_linha_vitoria(jogador):
     return []
 
 
+def animar_caracol_reinicio(ganhador):
+    for lampada in SEQUENCIA_CARACOL:
+        publicar_lampada(lampada, CORES[ganhador])
+        time.sleep(0.12)
+        publicar_lampada(lampada, CORES["apagado"])
+        time.sleep(0.04)
+    apagar_tabuleiro_seguro()
+
+
 def celebrar_vitoria(ganhador):
     linha = obter_linha_vitoria(ganhador)
     for _ in range(4):
@@ -162,7 +181,15 @@ def celebrar_vitoria(ganhador):
         for lampada in linha:
             publicar_lampada(lampada, CORES[ganhador])
         time.sleep(0.12)
-    piscar_todos(CORES[ganhador], vezes=2)
+
+    apagar_tabuleiro_seguro()
+    for lampada in linha:
+        publicar_lampada(lampada, CORES["ok"])
+        time.sleep(0.18)
+    time.sleep(1.0)
+
+    apagar_tabuleiro_seguro()
+    animar_caracol_reinicio(ganhador)
 
 
 def game_over(ganhador):
@@ -174,7 +201,7 @@ def game_over(ganhador):
     else:
         celebrar_vitoria(ganhador)
 
-    apagar_tabuleiro()
+    apagar_tabuleiro_seguro()
     tabuleiro = np.full((3, 3), "")
     turno = True
     jogada = 0
@@ -188,7 +215,7 @@ def resetar_jogo():
     print("Reset recebido: limpando jogo da velha.")
     publicar_pontuacao("reset_start")
     piscar_todos(CORES["-"], vezes=2)
-    apagar_tabuleiro()
+    apagar_tabuleiro_seguro()
     tabuleiro = np.full((3, 3), "")
     turno = True
     jogada = 0
