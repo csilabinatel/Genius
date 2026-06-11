@@ -68,7 +68,9 @@ void callback(char* topic, byte* payload, unsigned int length){
   String topico = topic;
 
   if (topico == "lamp_module/setState"){
-    const char* msg = (char*)payload; // Define o tamanho do buffer necessário para armazenar o JSON
+    char msg[length + 1];
+    memcpy(msg, payload, length);
+    msg[length] = '\0';
     StaticJsonDocument<200> doc; // Deserializa a string JSON para o objeto doc
     DeserializationError error = deserializeJson(doc, msg); // Verifica se houve erro na deserialização
     if (error) {

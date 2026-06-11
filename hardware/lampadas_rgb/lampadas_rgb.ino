@@ -6,7 +6,7 @@
 #include <FS.h>               // Files
 #include <ArduinoJson.h>
 
-const int keys[] = {3, 2, 1, 6, 5, 4, 9, 8, 7, 0};
+const int keys[] = {3, 2, 1, 4, 5, 6, 9, 8, 7, 0};
 // ligar -1 acessar a posição do vetor que estara correto 
 //Mapeação da ordem das lampadas // troca de 3 por 1,  nuemro da lampada pelo vetor 
 

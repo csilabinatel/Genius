@@ -54,11 +54,15 @@ def is_number_three(hand_landmarks):
 
 def is_number_four(hand_landmarks):
     if (hand_landmarks.ring_y1 < hand_landmarks.middle_dip_y1):
-        if (hand_landmarks.thumb_x1 > hand_landmarks.pink_mcp_x1):
-            if (hand_landmarks.thumb_x1 < hand_landmarks.index_mcp_x1):
-                if ((hand_landmarks.index_y1 < hand_landmarks.index_mcp_y1) and (hand_landmarks.middle_y1 < hand_landmarks.middle_mcp_y1)):
-                    if ((hand_landmarks.ring_y1 < hand_landmarks.ring_mcp_y1) and (hand_landmarks.pink_y1 < hand_landmarks.pink_mcp_y1)):
-                        return True
+        thumb_inside_palm = (
+            min(hand_landmarks.pink_mcp_x1, hand_landmarks.index_mcp_x1)
+            < hand_landmarks.thumb_x1
+            < max(hand_landmarks.pink_mcp_x1, hand_landmarks.index_mcp_x1)
+        )
+        if thumb_inside_palm:
+            if ((hand_landmarks.index_y1 < hand_landmarks.index_mcp_y1) and (hand_landmarks.middle_y1 < hand_landmarks.middle_mcp_y1)):
+                if ((hand_landmarks.ring_y1 < hand_landmarks.ring_mcp_y1) and (hand_landmarks.pink_y1 < hand_landmarks.pink_mcp_y1)):
+                    return True
     return False
 
 

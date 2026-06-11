@@ -234,6 +234,9 @@ def draw_detections(frame, message):
             _label_chip(frame, "", chip_x, chip_y, UI_THEME["red"], scale=0.85)
         elif message.get("dimmer_value") is not None:
             _label_chip(frame, f"DIMMER {message.get('dimmer_value')}", chip_x, chip_y, UI_THEME["blue"], scale=0.78)
+        elif message.get("number") is not None:
+            _put_text(frame, "NUMERO", (x1 + 12, y1 + 78), scale=0.65, color=UI_THEME["white"], thickness=2)
+            _put_text(frame, str(message.get("number")), (x1 + 140, y1 + 95), scale=1.8, color=UI_THEME["green"], thickness=4)
         else:
             _put_text(frame, "Faça um gesto", (x1 + 12, y1 + 90), scale=0.75, color=UI_THEME["white"], thickness=2)
 
