@@ -200,7 +200,9 @@ def draw_detections(frame, message):
         _rounded_panel(frame, x1, y1, x2, y2, UI_THEME["panel"], alpha=0.62, radius=18, border_color=UI_THEME["blue"], border_thickness=2)
         _label_chip(frame, "MÃO ESQ.", x1 + 10, y1 + 10, UI_THEME["blue"], scale=0.65)
 
-        if message.get("click_status"):
+        if message.get("thumbs_up"):
+            _label_chip(frame, "RESET", x1 + 10, y1 + 52, UI_THEME["yellow"], text_color=(20, 20, 20), scale=0.85)
+        elif message.get("click_status"):
             _label_chip(frame, "CLIQUE!", x1 + 10, y1 + 52, UI_THEME["yellow"], text_color=(20, 20, 20), scale=0.85)
         else:
             number = message.get("number")
@@ -222,7 +224,9 @@ def draw_detections(frame, message):
         chip_y = y1 + 52
 
         # Mostra só 1 ação principal para não poluir.
-        if message.get("open_palm"):
+        if message.get("thumbs_up"):
+            _label_chip(frame, "RESET", chip_x, chip_y, UI_THEME["yellow"], text_color=(20, 20, 20), scale=0.85)
+        elif message.get("open_palm"):
             _label_chip(frame, "", chip_x, chip_y, UI_THEME["green"], scale=0.85)
         elif message.get("close_fist"):
             _label_chip(frame, "", chip_x, chip_y, UI_THEME["red"], scale=0.85)
@@ -316,6 +320,23 @@ def control_objects(topic, right_hand_message, left_hand_message, system_status,
             system_status["genius_target_number"] = None
 
         return
+
+    if topic == topic_velha:
+        both_thumbs_up = (
+            len(left_hand_message) != 0
+            and len(right_hand_message) != 0
+            and bool(left_hand_message.get("thumbs_up"))
+            and bool(right_hand_message.get("thumbs_up"))
+        )
+        system_status.setdefault("velha_reset_latched", False)
+        if both_thumbs_up and not system_status["velha_reset_latched"]:
+            msg = {"comando": "reset"}
+            print(msg)
+            client.publish(topic, json.dumps(msg))
+            system_status["velha_reset_latched"] = True
+            return
+        if not both_thumbs_up:
+            system_status["velha_reset_latched"] = False
 
     lamp_number = None
     lamp_status = None

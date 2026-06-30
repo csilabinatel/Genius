@@ -170,6 +170,18 @@ def game_over(ganhador):
     publicar_pontuacao("new_round")
 
 
+def reiniciar_rodada():
+    global tabuleiro, turno, jogada, partida
+
+    piscar_todos(CORES["ok"], vezes=1)
+    apagar_tabuleiro()
+    tabuleiro = np.full((3, 3), "")
+    turno = True
+    jogada = 0
+    partida += 1
+    publicar_pontuacao("reset")
+
+
 def registrar_jogada(lampada, jogador):
     global turno, jogada, recorde
 
@@ -225,9 +237,21 @@ def on_message(client, userdata, msg):
 
     try:
         js = json.loads(str(msg.payload.decode()))
+    except (json.JSONDecodeError, TypeError, ValueError):
+        publicar_pontuacao("invalid_payload")
+        return
+
+    if js.get("comando") == "reset":
+        if lista[3] == "escolha" and lista[2] in (clientID_01, clientID_02):
+            reiniciar_rodada()
+        else:
+            publicar_pontuacao("invalid_payload")
+        return
+
+    try:
         lampada = int(js["lampada"])
         indice_para_matriz(lampada)
-    except (json.JSONDecodeError, KeyError, TypeError, ValueError):
+    except (KeyError, TypeError, ValueError):
         publicar_pontuacao("invalid_payload")
         return
 

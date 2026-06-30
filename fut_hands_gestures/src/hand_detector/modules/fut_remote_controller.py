@@ -26,6 +26,11 @@ class SLIRemoteController():
         command_dic["graphs"] = False
         command_dic["remove_all"] = False
         command_dic["dimmer_value"]= None
+        command_dic["thumbs_up"] = False
+
+        if gd.is_thumbs_up(land_marks):
+            command_dic["thumbs_up"] = True
+            return command_dic
 
         number = self.__get_gesture_number(land_marks, hand_pos)
         if isinstance(number, int):
@@ -127,7 +132,11 @@ class SLIRemoteController():
             land_marks = SLIHandLandMarks(hand_landmarks[hand_position[0]])
 
             if hand_position[0] == "Left" and roi_side == "Left":
+                if gd.is_thumbs_up(land_marks):
+                    return frame, {"hand": "Left", "number": None, "click_status": False, "thumbs_up": True}
+
                 left_hand_dic = self.__get_gesture_number(land_marks, "Left")
+                left_hand_dic["thumbs_up"] = False
                 _, dimmer_value = gd.controll_dimmer(land_marks)
                 if dimmer_value == 0:
                     left_hand_dic["click_status"] = True

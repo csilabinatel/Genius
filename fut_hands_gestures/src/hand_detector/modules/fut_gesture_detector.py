@@ -66,6 +66,17 @@ def is_number_four(hand_landmarks):
     return False
 
 
+def is_thumbs_up(hand_landmarks):
+    thumb_up = hand_landmarks.thumb_y1 < hand_landmarks.index_mcp_y1
+    fingers_closed = (
+        hand_landmarks.index_y1 > hand_landmarks.index_finger_pip_y1
+        and hand_landmarks.middle_y1 > hand_landmarks.middle_dip_y1
+        and hand_landmarks.ring_y1 > hand_landmarks.ring_pip_y1
+        and hand_landmarks.pink_y1 > hand_landmarks.pink_mcp_y1
+    )
+    return thumb_up and fingers_closed
+
+
 def is_number_seven(hand_landmarks):
     angle = calculate_angle_between_lines((hand_landmarks.thumb_x1, hand_landmarks.thumb_y1), (hand_landmarks.wirst_x1, hand_landmarks.wirst_y1))
     if (angle < 40) and (hand_landmarks.middle_y1 > hand_landmarks.middle_mcp_y1):
